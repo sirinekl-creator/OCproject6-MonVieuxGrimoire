@@ -1,9 +1,20 @@
 const express = require('express');
+const mongoose = require('mongoose');
+require('dotenv').config();
+
+const userRoutes = require('./routes/user');
 
 const app = express();
 
+// Connexion à MongoDB
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('Connexion à MongoDB réussie !'))
+  .catch((error) => console.log('Connexion à MongoDB échouée !', error));
+
+// Permet de lire le JSON envoyé dans les requêtes
 app.use(express.json());
 
+// Gestion des CORS
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader(
@@ -16,5 +27,8 @@ app.use((req, res, next) => {
   );
   next();
 });
+
+// Routes d'authentification
+app.use('/api/auth', userRoutes);
 
 module.exports = app;
