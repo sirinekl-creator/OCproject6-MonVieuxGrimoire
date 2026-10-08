@@ -1,8 +1,10 @@
+const path = require('path');
 const express = require('express');
 const mongoose = require('mongoose');
 require('dotenv').config();
 
 const userRoutes = require('./routes/user');
+const bookRoutes = require('./routes/book');
 
 const app = express();
 
@@ -28,7 +30,10 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use('/images', express.static(path.join(__dirname, 'images')));
+
 // Routes d'authentification
 app.use('/api/auth', userRoutes);
+app.use('/api/books', bookRoutes);
 
 module.exports = app;
