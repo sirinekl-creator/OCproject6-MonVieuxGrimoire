@@ -20,4 +20,7 @@ router.delete('/:id', auth, bookCtrl.deleteBook);
 // Modifier un livre
 router.put('/:id', auth, multer, bookCtrl.modifyBook);
 
+// Noter un livre
+router.post('/:id/rating', auth, bookCtrl.rateBook);
+
 module.exports = router;

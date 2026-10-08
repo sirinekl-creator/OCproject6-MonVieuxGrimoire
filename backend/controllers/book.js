@@ -164,3 +164,57 @@ exports.modifyBook = (req, res, next) => {
     })
     .catch((error) => res.status(400).json({ error }));
 };
+
+exports.rateBook = async (req, res) => {
+  try {
+    const { userId, rating } = req.body;
+
+    if (userId !== req.auth.userId) {
+      return res.status(403).json({
+        message: 'Utilisateur non autorisé'
+      });
+    }
+
+    if (!Number.isInteger(rating) || rating < 0 || rating > 5) {
+      return res.status(400).json({
+        message: 'La note doit être un entier entre 0 et 5'
+      });
+    }
+
+    const book = await Book.findById(req.params.id);
+
+    if (!book) {
+      return res.status(404).json({
+        message: 'Livre introuvable'
+      });
+    }
+
+    const alreadyRated = book.ratings.some(
+      (item) => item.userId === req.auth.userId
+    );
+
+    if (alreadyRated) {
+      return res.status(400).json({
+        message: 'Vous avez déjà noté ce livre'
+      });
+    }
+
+    book.ratings.push({
+      userId: req.auth.userId,
+      grade: rating
+    });
+
+    const total = book.ratings.reduce(
+      (sum, item) => sum + item.grade,
+      0
+    );
+
+    book.averageRating = total / book.ratings.length;
+
+    await book.save();
+
+    res.status(200).json(book);
+  } catch (error) {
+    res.status(500).json({ error });
+  }
+};
