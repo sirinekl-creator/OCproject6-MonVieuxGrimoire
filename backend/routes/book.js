@@ -17,4 +17,7 @@ router.post('/', auth, multer, bookCtrl.createBook);
 // Supprimer un livre
 router.delete('/:id', auth, bookCtrl.deleteBook);
 
+// Modifier un livre
+router.put('/:id', auth, multer, bookCtrl.modifyBook);
+
 module.exports = router;

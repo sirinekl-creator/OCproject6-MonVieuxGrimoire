@@ -95,3 +95,72 @@ exports.deleteBook = (req, res, next) => {
       res.status(500).json({ error });
     });
 };
+
+exports.modifyBook = (req, res, next) => {
+  Book.findById(req.params.id)
+    .then((book) => {
+      if (!book) {
+        return res.status(404).json({
+          message: 'Livre introuvable'
+        });
+      }
+
+      if (book.userId !== req.auth.userId) {
+        return res.status(403).json({
+          message: 'Modification non autorisée'
+        });
+      }
+
+      const bookObject = req.file
+        ? {
+            ...JSON.parse(req.body.book),
+            imageUrl: `${req.protocol}://${req.get('host')}/images/${req.file.filename}`
+          }
+        : { ...req.body };
+
+      delete bookObject._id;
+      delete bookObject.userId;
+      delete bookObject.ratings;
+      delete bookObject.averageRating;
+
+    return Book.updateOne(
+  { _id: req.params.id, userId: req.auth.userId },
+  { $set: bookObject },
+  { runValidators: true }
+)
+  .then((result) => {
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        message: 'Livre introuvable'
+      });
+    }
+
+    if (req.file && book.imageUrl) {
+      const oldFilename = path.basename(
+        new URL(book.imageUrl).pathname
+      );
+
+      const oldImagePath = path.join(
+        __dirname,
+        '..',
+        'images',
+        oldFilename
+      );
+
+      fs.unlink(oldImagePath, (error) => {
+        if (error && error.code !== 'ENOENT') {
+          console.error(
+            'Erreur lors de la suppression de l’ancienne image :',
+            error
+          );
+        }
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Livre modifié !'
+    });
+  });
+    })
+    .catch((error) => res.status(400).json({ error }));
+};
