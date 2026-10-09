@@ -1,6 +1,22 @@
 const Book = require('../models/Book');
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
+
+const optimizeImage = async (file) => {
+  const imagePath = file.path;
+  const optimizedPath = path.join(
+    path.dirname(imagePath),
+    `optimized_${path.parse(file.filename).name}.webp`
+  );
+
+  await sharp(imagePath)
+    .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+    .webp({ quality: 80 })
+    .toFile(optimizedPath);
+
+  return optimizedPath;
+};
 
 exports.getAllBooks = (req, res, next) => {
   Book.find()
@@ -22,9 +38,11 @@ exports.getOneBook = (req, res, next) => {
     .catch((error) => res.status(400).json({ error }));
 };
 
-exports.createBook = (req, res, next) => {
+exports.createBook = async (req, res, next) => {
   try {
     const bookObject = JSON.parse(req.body.book);
+    const optimizedImagePath = await optimizeImage(req.file);
+    await fs.promises.unlink(req.file.path);
 
     delete bookObject._id;
     delete bookObject.userId;
@@ -32,7 +50,7 @@ exports.createBook = (req, res, next) => {
     const book = new Book({
       ...bookObject,
       userId: req.auth.userId,
-      imageUrl: `${req.protocol}://${req.get('host')}/images/${req.file.filename}`,
+      imageUrl: `${req.protocol}://${req.get('host')}/images/${path.basename(optimizedImagePath)}`,
       ratings: [],
       averageRating: 0
     });
@@ -96,9 +114,9 @@ exports.deleteBook = (req, res, next) => {
     });
 };
 
-exports.modifyBook = (req, res, next) => {
+exports.modifyBook = async (req, res, next) => {
   Book.findById(req.params.id)
-    .then((book) => {
+    .then(async (book) => {
       if (!book) {
         return res.status(404).json({
           message: 'Livre introuvable'
@@ -111,10 +129,17 @@ exports.modifyBook = (req, res, next) => {
         });
       }
 
+     let optimizedImagePath = null;
+
+if (req.file) {
+  optimizedImagePath = await optimizeImage(req.file);
+  await fs.promises.unlink(req.file.path);
+}
+
       const bookObject = req.file
         ? {
             ...JSON.parse(req.body.book),
-            imageUrl: `${req.protocol}://${req.get('host')}/images/${req.file.filename}`
+            imageUrl: `${req.protocol}://${req.get('host')}/images/${path.basename(optimizedImagePath)}`
           }
         : { ...req.body };
 
