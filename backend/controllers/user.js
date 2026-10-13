@@ -1,28 +1,47 @@
 // Imports
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const User = require("../models/User");
 
 // Inscription d'un utilisateur
 exports.signup = (req, res, next) => {
-  console.log('Requête signup reçue :', req.body.email);
+  console.log("Requête signup reçue :", req.body.email);
 
-  bcrypt.hash(req.body.password, 10)
+  bcrypt
+    .hash(req.body.password, 10)
     .then((hash) => {
       const user = new User({
         email: req.body.email,
-        password: hash
+        password: hash,
       });
 
-      user.save()
-        .then(() => res.status(201).json({ message: 'Utilisateur créé !' }))
+      user
+        .save()
+        .then(() => {
+          res.status(201).json({
+            message: "Utilisateur créé !",
+          });
+        })
         .catch((error) => {
-          console.error('Erreur sauvegarde utilisateur :', error);
-          res.status(400).json({ error });
+          console.error("Erreur sauvegarde utilisateur :", error);
+
+          if (
+            error.code === 11000 ||
+            (error.name === "ValidationError" &&
+              error.errors?.email?.kind === "unique")
+          ) {
+            return res.status(409).json({
+              message: "Cette adresse e-mail est déjà utilisée",
+            });
+          }
+
+          res.status(400).json({
+            message: "Impossible de créer cet utilisateur",
+          });
         });
     })
     .catch((error) => {
-      console.error('Erreur bcrypt :', error);
+      console.error("Erreur bcrypt :", error);
       res.status(500).json({ error });
     });
 };
@@ -33,28 +52,31 @@ exports.login = (req, res, next) => {
     .then((user) => {
       if (!user) {
         return res.status(401).json({
-          message: 'Paire identifiant/mot de passe incorrecte'
+          message: "Paire identifiant/mot de passe incorrecte",
         });
       }
 
-      bcrypt.compare(req.body.password, user.password)
+      bcrypt
+        .compare(req.body.password, user.password)
         .then((valid) => {
           if (!valid) {
             return res.status(401).json({
-              message: 'Paire identifiant/mot de passe incorrecte'
+              message: "Paire identifiant/mot de passe incorrecte",
             });
           }
 
           res.status(200).json({
             userId: user._id,
-            token: jwt.sign(
-  { userId: user._id },
-  process.env.JWT_SECRET,
-  { expiresIn: '24h' }
-)
+            token: jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+              expiresIn: "24h",
+            }),
           });
         })
-        .catch((error) => res.status(500).json({ error }));
+        .catch((error) => {
+          res.status(500).json({ error });
+        });
     })
-    .catch((error) => res.status(500).json({ error }));
+    .catch((error) => {
+      res.status(500).json({ error });
+    });
 };

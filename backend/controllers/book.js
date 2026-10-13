@@ -1,17 +1,18 @@
-const Book = require('../models/Book');
-const fs = require('fs');
-const path = require('path');
-const sharp = require('sharp');
+const Book = require("../models/Book");
+const fs = require("fs");
+const path = require("path");
+const sharp = require("sharp");
+const mongoose = require("mongoose");
 
 const optimizeImage = async (file) => {
   const imagePath = file.path;
   const optimizedPath = path.join(
     path.dirname(imagePath),
-    `optimized_${path.parse(file.filename).name}.webp`
+    `optimized_${path.parse(file.filename).name}.webp`,
   );
 
   await sharp(imagePath)
-    .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+    .resize(800, 800, { fit: "inside", withoutEnlargement: true })
     .webp({ quality: 80 })
     .toFile(optimizedPath);
 
@@ -29,19 +30,25 @@ exports.getOneBook = (req, res, next) => {
     .then((book) => {
       if (!book) {
         return res.status(404).json({
-          message: 'Livre introuvable'
+          message: "Livre introuvable",
         });
       }
 
       res.status(200).json(book);
     })
-    .catch((error) => res.status(400).json({ error }));
+    .catch((error) => {
+      res.status(400).json({
+        message: "Identifiant de livre invalide",
+      });
+    });
 };
 
 exports.createBook = async (req, res, next) => {
+  let optimizedImagePath = null;
+
   try {
     const bookObject = JSON.parse(req.body.book);
-    const optimizedImagePath = await optimizeImage(req.file);
+    optimizedImagePath = await optimizeImage(req.file);
     await fs.promises.unlink(req.file.path);
 
     delete bookObject._id;
@@ -50,64 +57,69 @@ exports.createBook = async (req, res, next) => {
     const book = new Book({
       ...bookObject,
       userId: req.auth.userId,
-      imageUrl: `${req.protocol}://${req.get('host')}/images/${path.basename(optimizedImagePath)}`,
+      imageUrl: `${req.protocol}://${req.get("host")}/images/${path.basename(optimizedImagePath)}`,
       ratings: [],
-      averageRating: 0
+      averageRating: 0,
     });
 
-    book.save()
-      .then(() => res.status(201).json({
-        message: 'Livre enregistré !'
-      }))
-      .catch((error) => res.status(400).json({ error }));
+    await book.save();
 
+    return res.status(201).json({
+      message: "Livre enregistré !",
+    });
   } catch (error) {
+    if (optimizedImagePath) {
+      await fs.promises.unlink(optimizedImagePath).catch(console.error);
+    }
+
     res.status(400).json({ error });
   }
 };
 
 exports.deleteBook = (req, res, next) => {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    return res.status(400).json({
+      message: "Identifiant de livre invalide",
+    });
+  }
+
   Book.findById(req.params.id)
     .then((book) => {
       if (!book) {
         return res.status(404).json({
-          message: 'Livre introuvable'
+          message: "Livre introuvable",
         });
       }
 
       if (book.userId !== req.auth.userId) {
         return res.status(403).json({
-          message: 'Vous ne pouvez pas supprimer ce livre'
+          message: "Vous ne pouvez pas supprimer ce livre",
         });
       }
 
       const filename = path.basename(new URL(book.imageUrl).pathname);
-      const imagePath = path.join(__dirname, '..', 'images', filename);
+      const imagePath = path.join(__dirname, "..", "images", filename);
 
       return Book.deleteOne({
         _id: book._id,
-        userId: req.auth.userId
-      })
-        .then((result) => {
-          if (result.deletedCount === 0) {
-            return res.status(404).json({
-              message: 'Livre introuvable'
-            });
+        userId: req.auth.userId,
+      }).then((result) => {
+        if (result.deletedCount === 0) {
+          return res.status(404).json({
+            message: "Livre introuvable",
+          });
+        }
+
+        fs.unlink(imagePath, (error) => {
+          if (error && error.code !== "ENOENT") {
+            console.error("Erreur lors de la suppression de l’image :", error);
           }
-
-          fs.unlink(imagePath, (error) => {
-            if (error && error.code !== 'ENOENT') {
-              console.error(
-                'Erreur lors de la suppression de l’image :',
-                error
-              );
-            }
-          });
-
-          return res.status(200).json({
-            message: 'Livre supprimé !'
-          });
         });
+
+        return res.status(200).json({
+          message: "Livre supprimé !",
+        });
+      });
     })
     .catch((error) => {
       res.status(500).json({ error });
@@ -119,27 +131,27 @@ exports.modifyBook = async (req, res, next) => {
     .then(async (book) => {
       if (!book) {
         return res.status(404).json({
-          message: 'Livre introuvable'
+          message: "Livre introuvable",
         });
       }
 
       if (book.userId !== req.auth.userId) {
         return res.status(403).json({
-          message: 'Modification non autorisée'
+          message: "Modification non autorisée",
         });
       }
 
-     let optimizedImagePath = null;
+      let optimizedImagePath = null;
 
-if (req.file) {
-  optimizedImagePath = await optimizeImage(req.file);
-  await fs.promises.unlink(req.file.path);
-}
+      if (req.file) {
+        optimizedImagePath = await optimizeImage(req.file);
+        await fs.promises.unlink(req.file.path);
+      }
 
       const bookObject = req.file
         ? {
             ...JSON.parse(req.body.book),
-            imageUrl: `${req.protocol}://${req.get('host')}/images/${path.basename(optimizedImagePath)}`
+            imageUrl: `${req.protocol}://${req.get("host")}/images/${path.basename(optimizedImagePath)}`,
           }
         : { ...req.body };
 
@@ -148,44 +160,41 @@ if (req.file) {
       delete bookObject.ratings;
       delete bookObject.averageRating;
 
-    return Book.updateOne(
-  { _id: req.params.id, userId: req.auth.userId },
-  { $set: bookObject },
-  { runValidators: true }
-)
-  .then((result) => {
-    if (result.matchedCount === 0) {
-      return res.status(404).json({
-        message: 'Livre introuvable'
-      });
-    }
-
-    if (req.file && book.imageUrl) {
-      const oldFilename = path.basename(
-        new URL(book.imageUrl).pathname
-      );
-
-      const oldImagePath = path.join(
-        __dirname,
-        '..',
-        'images',
-        oldFilename
-      );
-
-      fs.unlink(oldImagePath, (error) => {
-        if (error && error.code !== 'ENOENT') {
-          console.error(
-            'Erreur lors de la suppression de l’ancienne image :',
-            error
-          );
+      return Book.updateOne(
+        { _id: req.params.id, userId: req.auth.userId },
+        { $set: bookObject },
+        { runValidators: true },
+      ).then((result) => {
+        if (result.matchedCount === 0) {
+          return res.status(404).json({
+            message: "Livre introuvable",
+          });
         }
-      });
-    }
 
-    return res.status(200).json({
-      message: 'Livre modifié !'
-    });
-  });
+        if (req.file && book.imageUrl) {
+          const oldFilename = path.basename(new URL(book.imageUrl).pathname);
+
+          const oldImagePath = path.join(
+            __dirname,
+            "..",
+            "images",
+            oldFilename,
+          );
+
+          fs.unlink(oldImagePath, (error) => {
+            if (error && error.code !== "ENOENT") {
+              console.error(
+                "Erreur lors de la suppression de l’ancienne image :",
+                error,
+              );
+            }
+          });
+        }
+
+        return res.status(200).json({
+          message: "Livre modifié !",
+        });
+      });
     })
     .catch((error) => res.status(400).json({ error }));
 };
@@ -196,13 +205,13 @@ exports.rateBook = async (req, res) => {
 
     if (userId !== req.auth.userId) {
       return res.status(403).json({
-        message: 'Utilisateur non autorisé'
+        message: "Utilisateur non autorisé",
       });
     }
 
     if (!Number.isInteger(rating) || rating < 0 || rating > 5) {
       return res.status(400).json({
-        message: 'La note doit être un entier entre 0 et 5'
+        message: "La note doit être un entier entre 0 et 5",
       });
     }
 
@@ -210,29 +219,26 @@ exports.rateBook = async (req, res) => {
 
     if (!book) {
       return res.status(404).json({
-        message: 'Livre introuvable'
+        message: "Livre introuvable",
       });
     }
 
     const alreadyRated = book.ratings.some(
-      (item) => item.userId === req.auth.userId
+      (item) => item.userId === req.auth.userId,
     );
 
     if (alreadyRated) {
       return res.status(400).json({
-        message: 'Vous avez déjà noté ce livre'
+        message: "Vous avez déjà noté ce livre",
       });
     }
 
     book.ratings.push({
       userId: req.auth.userId,
-      grade: rating
+      grade: rating,
     });
 
-    const total = book.ratings.reduce(
-      (sum, item) => sum + item.grade,
-      0
-    );
+    const total = book.ratings.reduce((sum, item) => sum + item.grade, 0);
 
     book.averageRating = total / book.ratings.length;
 
@@ -250,10 +256,10 @@ exports.getBestRatedBooks = (req, res, next) => {
     .limit(3)
     .then((books) => res.status(200).json(books))
     .catch((error) => {
-      console.error('Erreur getBestRatedBooks :', error);
+      console.error("Erreur getBestRatedBooks :", error);
 
       res.status(500).json({
-        message: 'Erreur lors de la récupération des livres'
+        message: "Erreur lors de la récupération des livres",
       });
     });
 };
